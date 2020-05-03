@@ -1,5 +1,5 @@
 # reddit-pushbullet-notifier
-Used to notify you of new posts on Reddit that match a subreddit and post title wildcard query. Script will query Reddit every 5 minutes unless overriden.
+Used to notify you of new posts on Reddit that match a subreddit and post title. Script will query Reddit every 5 minutes unless overriden.
 
 When matches are found, they are posted to your pushbullet account. All devices are chosen by default but can be overriden.
 
@@ -45,7 +45,7 @@ node index.js -s mechmarket -h "RAMA M60-A"
 ```
 
 ```
-node index.js -s hardwareswap -w "RTX 2080ti" -t 60
+node index.js -s hardwareswap -w "RTX 2080ti" -i 60
 ```
 
 ```
