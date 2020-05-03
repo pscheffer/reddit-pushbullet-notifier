@@ -1,0 +1,21 @@
+{
+  "name": "reddit-pushbullet-notifier",
+  "version": "1.0.0",
+  "description": "Sends notifications via Pushbullet when new posts of a Subreddit match your query.",
+  "main": "index.js",
+  "repository": "https://github.com/philentology/reddit-pushbullet-notifier",
+  "author": "Philip Scheffer <philip.scheffer@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "args": "^5.0.1",
+    "dotenv": "^8.2.0",
+    "moment": "^2.25.1",
+    "pushbullet": "^2.4.0",
+    "superagent": "^5.2.2",
+    "xml2json": "^0.12.0"
+  },
+  "bin": {
+    "rpn": "./index.js"
+  }
+}
