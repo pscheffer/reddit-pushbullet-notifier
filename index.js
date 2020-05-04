@@ -172,7 +172,6 @@ const sendBullets = async (matches) => {
   do {
     try {
       var pb_res = await pusher.link({}, matches[i].title, matches[i].url)
-      console.log(pb_res)
       i++
     } catch(error) {
       console.error(new Error(error))
