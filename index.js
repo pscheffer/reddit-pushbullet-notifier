@@ -26,7 +26,7 @@ const config = {
 
 /**
  * Validates passed in args
- * Returns Boolean
+ * @returns {boolean}
  * TODO: verify subreddit exists
  */
 const validateArgs = async () => {
@@ -73,7 +73,7 @@ const validateArgs = async () => {
 
 /**
  * Brute Force! Download the RSS and parse Buffer to a JS Object
- * Returns object
+ * @returns {Object}
  */
 const downloadPostsFromRSS = async () => {
   try {
@@ -88,9 +88,9 @@ const downloadPostsFromRSS = async () => {
 
 /**
  * Takes array of title matches and compares with title to look for matches
- * @param {*} title_matches 
- * @param {*} title
- * Returns Boolean
+ * @param {array} title_matches 
+ * @param {string} title
+ * @returns {boolean}
  */
 const matchTitles = (title_matches, title) => {
   var matches = false
@@ -107,7 +107,8 @@ const matchTitles = (title_matches, title) => {
 
 /**
  * Checks the incoming title against all possible match queries
- * @param {*} title 
+ * @param {string} title 
+ * @returns {boolean}
  */
 const findMatch = (title) => {
   title = title.toLowerCase()
@@ -136,8 +137,9 @@ const findMatch = (title) => {
 
 /**
  * Searches Reddit Posts to look for matches against config
- * @param {*} posts 
- * @param {*} current_ms
+ * @param {array} posts 
+ * @param {number} current_ms
+ * @returns {array} matches 
  */
 const searchPostsForMatches = (posts, current_ms) => {
   var matches = []
@@ -165,7 +167,7 @@ const searchPostsForMatches = (posts, current_ms) => {
 /**
  * Sends Pushbullet links to all devices
  * TODO: allow user to provde device ID(s)
- * @param {*} matches 
+ * @param {array} matches 
  */
 const sendBullets = async (matches) => {
   let i = 0
