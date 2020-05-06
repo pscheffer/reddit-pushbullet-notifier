@@ -148,7 +148,7 @@ const searchPostsForMatches = (posts, current_ms) => {
   // for each post
   do {
     // if time is within interval
-    var post_ms = moment(posts[0].updated).utc().valueOf()
+    var post_ms = moment(posts[i].updated).utc().valueOf()
     if(post_ms >= interval_ms) {
       // check if title matches our pattern, simple lowercase check
       if(findMatch(posts[i].title)) {
