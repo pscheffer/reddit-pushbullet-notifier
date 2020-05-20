@@ -92,7 +92,6 @@ const downloadPostsFromHtml = async () => {
         time: $(el).find('a[data-click-id="timestamp"]').text(),
         url: $(el).find('a[data-click-id="timestamp"]').attr('href')
       }
-      console.log(post)
       posts.push(post)
     })
     
