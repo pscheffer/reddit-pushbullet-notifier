@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 require('dotenv').config()
 const args = require('args')
-const sa = require('superagent')
+const rp = require('request-promise-native')
+const cheerio = require('cheerio')
 const parser = require('xml2json')
 const moment = require('moment')
 const pushbullet = require('pushbullet')
@@ -13,7 +14,7 @@ args
   .option('post', 'String - Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild.')
   .option('have', 'String -[H] marketplace post title you want to match against. Required if no Post or Want args are present.')
   .option('want', 'String - [W] marketplace post title you want to match against. Required if no Post or Have args are present.')
-  .option('interval', 'Number - Interval that script checks for new posts.')
+  .option('interval', 'Number - Interval in seconds that script checks for new posts. Max interval is 3540 (59 minutes) as the scraper uses the rendered post time stamp which renders as: just now, X minutes ago, X hours ago, etc. 59 minutes is the last level of accuracy that is useful to avoid dupes.')
 
 const flags = args.parse(process.argv)
 const config = {
@@ -21,7 +22,7 @@ const config = {
   post: '',
   have: '',
   want: '',
-  interval: 300 // 5 minutes in seconds
+  interval: 15 // 5 minutes in seconds
 }
 
 /**
@@ -39,7 +40,7 @@ const validateArgs = async () => {
 
   if(typeof flags.subreddit === 'string') {
     // use /new.rss to get the latest
-    let subreddit = `https://reddit.com/r/${flags.subreddit}/new.rss`
+    let subreddit = `https://reddit.com/r/${flags.subreddit}/new`
     valid.subreddit = true
     config.subreddit = subreddit
   }
@@ -60,7 +61,7 @@ const validateArgs = async () => {
     config.want = flags.want.split(',')
   }
 
-  if(typeof flags.interval === 'undefined' || typeof flags.interval === 'number') {
+  if(typeof flags.interval === 'undefined' || (typeof flags.interval === 'number' && flags.interval <= 3540)) {
     valid.interval = true
     if(typeof flags.interval !== 'undefined') {
       config.interval === flags.interval
@@ -72,14 +73,32 @@ const validateArgs = async () => {
 }
 
 /**
- * Brute Force! Download the RSS and parse Buffer to a JS Object
+ * Brute Force! Download the HTML and parse Buffer to a JS Object
  * @returns {Object}
  */
-const downloadPostsFromRSS = async () => {
+const downloadPostsFromHtml = async () => {
   try {
-    var rss_feed_xml = await sa.get(config.subreddit).set('Accept', 'application/atom+xml')
-    var rss_obj = JSON.parse(parser.toJson(rss_feed_xml.body.toString('utf8')))
-    return rss_obj.feed.entry || []
+    var options = {
+      uri: config.subreddit,
+      transform: (body) => {
+        return cheerio.load(body)
+      }
+    }
+    var $ = await rp(options)
+
+    var posts = [];
+
+    $('.Post').each( (i, el) => {
+      let post = {
+        title: $(el).find('h3').text(),
+        time: $(el).find('a[data-click-id="timestamp"]').text(),
+        url: $(el).find('a[data-click-id="timestamp"]').attr('href')
+      }
+      console.log(post)
+      posts.push(post)
+    })
+    
+    return posts
   } catch (error) {
     console.error(new Error(error))
     process.exit(1)
@@ -136,25 +155,42 @@ const findMatch = (title) => {
 }
 
 /**
+ * Parses string that we can use as a time interval
+ * @param {string} time_string 
+ * @returns {number} time in seconds
+ */
+const parseTime = (time_string) => {
+  var time = false
+  // just now
+  if(time_string === 'just now') {
+    time = 0
+  } 
+  // minutes
+  else if (time_string.indexOf('minutes') !== -1) {
+    time = parseInt(time_string) * 60
+  }
+  // hours/days/weeks/years are too long to have a proper interval
+  return time
+}
+
+/**
  * Searches Reddit Posts to look for matches against config
  * @param {array} posts 
- * @param {number} current_ms
  * @returns {array} matches 
  */
-const searchPostsForMatches = (posts, current_ms) => {
+const searchPostsForMatches = (posts) => {
   var matches = []
   var i = 0
-  var interval_ms = current_ms - (config.interval * 1000)
   // for each post
   do {
     // if time is within interval
-    var post_ms = moment(posts[i].updated).utc().valueOf()
-    if(post_ms >= interval_ms) {
+    var parsed_time = parseTime(posts[i].time)
+    if(parsed_time && (parsed_time <= config.interval)) {
       // check if title matches our pattern, simple lowercase check
       if(findMatch(posts[i].title)) {
         matches.push({
           title: posts[i].title,
-          url: posts[i].link.href
+          url: posts[i].url
         })
       }
     }
@@ -186,11 +222,9 @@ const sendBullets = async (matches) => {
  * Does NOT alert user of attempts with no matches
  */
 const checkForUpdates = async () => {
-  // cache current time to check if content was created between interval and now
-  var current_ms = moment().utc().valueOf()
-  var posts = await downloadPostsFromRSS()
+  var posts = await downloadPostsFromHtml()
   if(posts.length) {
-    var matches = searchPostsForMatches(posts, current_ms)
+    var matches = searchPostsForMatches(posts)
     if(matches.length) {
       sendBullets(matches)
     }
