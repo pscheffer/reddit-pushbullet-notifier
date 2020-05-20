@@ -62,7 +62,7 @@ const validateArgs = async () => {
   if(typeof flags.interval === 'undefined' || (typeof flags.interval === 'number' && flags.interval <= 3540)) {
     valid.interval = true
     if(typeof flags.interval !== 'undefined') {
-      config.interval === flags.interval
+      config.interval = flags.interval
     }
   }
 
