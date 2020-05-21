@@ -182,7 +182,7 @@ const searchPostsForMatches = (posts) => {
   do {
     // if time is within interval
     var parsed_time = parseTime(posts[i].time)
-    if(parsed_time && (parsed_time <= config.interval)) {
+    if(parsed_time !== false && (parsed_time <= config.interval)) {
       // check if title matches our pattern, simple lowercase check
       if(findMatch(posts[i].title)) {
         matches.push({
