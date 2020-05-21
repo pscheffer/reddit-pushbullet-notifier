@@ -1,10 +1,22 @@
 #!/usr/bin/env node
 require('dotenv').config()
 const args = require('args')
-const rp = require('request-promise-native')
-const cheerio = require('cheerio')
+const moment = require('moment')
 const pushbullet = require('pushbullet')
 const pusher = new pushbullet(process.env.PUSHBULLET_ACCESS_TOKEN)
+const bent = require('bent')
+const form_urlencoded = require('form-urlencoded')
+
+const REDDIT_USERNAME = process.env.REDDIT_USERNAME
+const REDDIT_PASSWORD = process.env.REDDIT_PASSWORD
+const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID
+const REDDIT_SECRET = process.env.REDDIT_SECRET
+const USER_AGENT = 'nodejs:search.pushbullet.notifier.for reddit:1.0'
+
+const REDDIT_API = 'https://oauth.reddit.com'
+const REDDIT_OAUTH = 'www.reddit.com/api/v1/access_token'
+
+var SESSSION = {}
 
 // config of args and defaults
 args
@@ -12,7 +24,7 @@ args
   .option('post', 'String - Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild.')
   .option('have', 'String -[H] marketplace post title you want to match against. Required if no Post or Want args are present.')
   .option('want', 'String - [W] marketplace post title you want to match against. Required if no Post or Have args are present.')
-  .option('interval', 'Number - Interval in seconds that script checks for new posts. Max interval is 3540 (59 minutes) as the scraper uses the rendered post time stamp which renders as: just now, X minutes ago, X hours ago, etc. 59 minutes is the last level of accuracy that is useful to avoid dupes.')
+  .option('interval', 'Number - Interval in seconds that script checks for new posts. Minimum is 1.')
 
 const flags = args.parse(process.argv)
 const config = {
@@ -20,7 +32,7 @@ const config = {
   post: '',
   have: '',
   want: '',
-  interval: 15 // 5 minutes in seconds
+  interval: 5
 }
 
 /**
@@ -38,9 +50,9 @@ const validateArgs = async () => {
 
   if(typeof flags.subreddit === 'string') {
     // use /new.rss to get the latest
-    let subreddit = `https://reddit.com/r/${flags.subreddit}/new`
+    // let subreddit = `https://reddit.com/r/${flags.subreddit}/new`
     valid.subreddit = true
-    config.subreddit = subreddit
+    config.subreddit = flags.subreddit
   }
 
   // match inputs
@@ -59,7 +71,7 @@ const validateArgs = async () => {
     config.want = flags.want.split(',')
   }
 
-  if(typeof flags.interval === 'undefined' || (typeof flags.interval === 'number' && flags.interval <= 3540)) {
+  if(typeof flags.interval === 'undefined' || (typeof flags.interval === 'number' && flags.interval >= 1)) {
     valid.interval = true
     if(typeof flags.interval !== 'undefined') {
       config.interval = flags.interval
@@ -68,38 +80,6 @@ const validateArgs = async () => {
 
   // check for all required params
   return valid.subreddit && valid.interval && (valid.post || valid.have || valid.want)
-}
-
-/**
- * Brute Force! Download the HTML and parse Buffer to a JS Object
- * @returns {Object}
- */
-const downloadPostsFromHtml = async () => {
-  try {
-    var options = {
-      uri: config.subreddit,
-      transform: (body) => {
-        return cheerio.load(body)
-      }
-    }
-    var $ = await rp(options)
-
-    var posts = [];
-
-    $('.Post').each( (i, el) => {
-      let post = {
-        title: $(el).find('h3').text(),
-        time: $(el).find('a[data-click-id="timestamp"]').text(),
-        url: $(el).find('a[data-click-id="timestamp"]').attr('href')
-      }
-      posts.push(post)
-    })
-    
-    return posts
-  } catch (error) {
-    console.error(new Error(error))
-    process.exit(1)
-  }
 }
 
 /**
@@ -152,44 +132,30 @@ const findMatch = (title) => {
 }
 
 /**
- * Parses string that we can use as a time interval
- * @param {string} time_string 
- * @returns {number} time in seconds
- */
-const parseTime = (time_string) => {
-  var time = false
-  // just now
-  if(time_string === 'just now') {
-    time = 0
-  } 
-  // minutes
-  else if (time_string.indexOf('minutes') !== -1) {
-    time = parseInt(time_string) * 60
-  }
-  // hours/days/weeks/years are too long to have a proper interval
-  return time
-}
-
-/**
  * Searches Reddit Posts to look for matches against config
  * @param {array} posts 
  * @returns {array} matches 
  */
-const searchPostsForMatches = (posts) => {
+const searchPostsForMatches = (posts, current_utc_ms) => {
   var matches = []
   var i = 0
   // for each post
   do {
-    // if time is within interval
-    var parsed_time = parseTime(posts[i].time)
-    if(parsed_time !== false && (parsed_time <= config.interval)) {
-      // check if title matches our pattern, simple lowercase check
-      if(findMatch(posts[i].title)) {
-        matches.push({
-          title: posts[i].title,
-          url: posts[i].url
-        })
+    // if time is within interval (time the update check started minus interval must be less than the post time)
+    if(posts[i].data) {
+      var post_utc_ms = posts[i].data.created_utc * 1000
+      var interval_ms =  config.interval * 1000
+      var within_interval = post_utc_ms >= (current_utc_ms - interval_ms)
+      if(within_interval) {
+        if(findMatch(posts[i].data.title)) {
+          matches.push({
+            title: posts[i].data.title,
+            url: `https://www.reddit.com${posts[i].data.permalink}`
+          })
+        }
       }
+    } else {
+      console.error('Invalid Post: ', posts[i])
     }
     i++
   } while (i < posts.length)
@@ -206,7 +172,7 @@ const sendBullets = async (matches) => {
   let i = 0
   do {
     try {
-      var pb_res = await pusher.link({}, matches[i].title, matches[i].url)
+      await pusher.link({}, matches[i].title, matches[i].url)
       i++
     } catch(error) {
       console.error(new Error(error))
@@ -214,24 +180,96 @@ const sendBullets = async (matches) => {
   } while (i < matches.length)
 }
 
+
+/**
+ * Uses the Reddit API to list posts
+ * @returns {array} posts
+ */
+const getRedditPosts = async () => {
+  try {
+    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, {
+      'User-Agent': USER_AGENT,
+      'Authorization': `${SESSION.token_type} ${SESSION.access_token}`,
+      'Accept': 'application/json'
+    })
+    const endpoint = `/r/${config.subreddit}/new`
+    const posts = await bent_reddit(endpoint)
+    if(posts.error) {
+      console.error(posts.error)
+    } else {
+      return posts.data.children || []
+    }
+  } catch(error) {
+    throw new Error(error)
+  }
+}
+
 /**
  * Downloads RSS, checks for updates, and sends Pushbullet Notifications
  * Does NOT alert user of attempts with no matches
  */
 const checkForUpdates = async () => {
-  var posts = await downloadPostsFromHtml()
-  if(posts.length) {
-    var matches = searchPostsForMatches(posts)
-    if(matches.length) {
-      sendBullets(matches)
+  try {
+    var current_utc_ms = moment().utc().valueOf()
+    var posts = await getRedditPosts()
+    if(posts.length) {
+      var matches = searchPostsForMatches(posts, current_utc_ms)
+      if(matches.length) {
+        sendBullets(matches)
+      }
     }
+  } catch(error) {
+    console.error(error)
+  }
+}
+
+/**
+ *  Set session data
+ * @param {objet} session 
+ */
+const setSession = (session) => {
+  SESSION = session
+}
+
+/**
+ * Initial auth token generation
+ * Kills script if it doesn't authenticate
+ */
+const generateRedditAuthToken = async () => {
+  try {
+
+    const post_body_str = form_urlencoded.default({
+      grant_type: 'password',
+      password: REDDIT_PASSWORD,
+      username: REDDIT_USERNAME
+    })
+
+    const uri = `https://${REDDIT_CLIENT_ID}:${REDDIT_SECRET}@${REDDIT_OAUTH}`
+
+    const reddit_post = bent('POST', 'json', {
+      'User-Agent': USER_AGENT,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    })
+
+    const reddit_response = await reddit_post(uri, post_body_str)
+
+    if(reddit_response.error) {
+      throw new Error(reddit_response.error)
+    } else {
+      setSession(reddit_response)
+    }
+  } catch(error) {
+    throw new Error(error)
   }
 }
 
 /**
  * Main function
  */
-const run = () => {
+const run = async () => {
+  await generateRedditAuthToken()
+
   // check once and then let the interval take over
   checkForUpdates()
 

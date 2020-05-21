@@ -1,18 +1,20 @@
 # reddit-pushbullet-notifier
-Used to notify you of new posts on Reddit that match a subreddit and post title. Script will query Reddit every 5 minutes unless overriden.
+Used to notify you of new posts on Reddit that match a subreddit and post title. 
 
 When matches are found, they are posted to your pushbullet account. All devices are chosen by default but can be overriden.
 
 The goal of this project was to act like saved searches for marketplaces, but can be used to notify you of other new posts that match your search.
 
-Currently uses RSS which has a server interval of (x) minutes. Setting a shorted interval for this script won't net you results sooner.
-
-TODO: Allow for page scraping as well.
-
 ## Requirements
 * NodeJS (https://nodejs.org/en/)
 * Pushbullet Account
   * Pushbullet Access Token (https://www.pushbullet.com/#settings)
+* Reddit API Access (https://www.reddit.com/prefs/apps)
+  * Create an Application
+    * Name: whatever you want to call it
+    * Type: script
+    * Redirect URL: http://127.0.0.1
+  * Copy down your Client ID (under the App name once its saved) and Secret for use in the `.env` file.
 
 ## Installation
 1. Install Node Modules:
@@ -26,6 +28,11 @@ npm install
 2. Create an `.env` file and add your Pushbullet Access token:
 ```
 PUSHBULLET_ACCESS_TOKEN=your_pushbullet_api_key
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_SECRET=your_reddit_secret
+
 ```
 
 ## Options
