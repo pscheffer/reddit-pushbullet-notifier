@@ -1,7 +1,7 @@
 # reddit-pushbullet-notifier
 Used to notify you of new posts on Reddit that match a subreddit and post title. 
 
-When matches are found, they are posted to your pushbullet account. All devices are chosen by default but can be overriden.
+When matches are found, they are posted to all devices in your pushbullet account.
 
 The goal of this project was to act like saved searches for marketplaces, but can be used to notify you of other new posts that match your search.
 

@@ -17,6 +17,7 @@ const REDDIT_API = 'https://oauth.reddit.com'
 const REDDIT_OAUTH = 'www.reddit.com/api/v1/access_token'
 
 var SESSSION = {}
+var SENT_POSTS = []
 
 // config of args and defaults
 args
@@ -136,19 +137,18 @@ const findMatch = (title) => {
  * @param {array} posts 
  * @returns {array} matches 
  */
-const searchPostsForMatches = (posts, current_utc_ms) => {
+const searchPostsForMatches = (posts) => {
   var matches = []
   var i = 0
   // for each post
   do {
-    // if time is within interval (time the update check started minus interval must be less than the post time)
     if(posts[i].data) {
-      var post_utc_ms = posts[i].data.created_utc * 1000
-      var interval_ms =  config.interval * 1000
-      var within_interval = post_utc_ms >= (current_utc_ms - interval_ms)
-      if(within_interval) {
+      // check if the post was already matched/sent and skip it if it was
+      // console.log(SENT_POSTS.indexOf(posts[i].data.id), posts[i].data.id, SENT_POSTS)
+      if(SENT_POSTS.indexOf(posts[i].data.id) === -1) {
         if(findMatch(posts[i].data.title)) {
           matches.push({
+            id: posts[i].data.id,
             title: posts[i].data.title,
             url: `https://www.reddit.com${posts[i].data.permalink}`
           })
@@ -173,11 +173,13 @@ const sendBullets = async (matches) => {
   do {
     try {
       await pusher.link({}, matches[i].title, matches[i].url)
+      SENT_POSTS.push(matches[i].id)
       i++
     } catch(error) {
       console.error(new Error(error))
     }
   } while (i < matches.length)
+  console.log(SENT_POSTS)
 }
 
 
@@ -187,13 +189,14 @@ const sendBullets = async (matches) => {
  */
 const getRedditPosts = async () => {
   try {
-    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, {
+    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, 401, {
       'User-Agent': USER_AGENT,
       'Authorization': `${SESSION.token_type} ${SESSION.access_token}`,
       'Accept': 'application/json'
     })
     const endpoint = `/r/${config.subreddit}/new`
     const posts = await bent_reddit(endpoint)
+    // todo, if 401, re-authorize
     if(posts.error) {
       console.error(posts.error)
     } else {
@@ -210,10 +213,9 @@ const getRedditPosts = async () => {
  */
 const checkForUpdates = async () => {
   try {
-    var current_utc_ms = moment().utc().valueOf()
     var posts = await getRedditPosts()
     if(posts.length) {
-      var matches = searchPostsForMatches(posts, current_utc_ms)
+      var matches = searchPostsForMatches(posts)
       if(matches.length) {
         sendBullets(matches)
       }
@@ -224,25 +226,38 @@ const checkForUpdates = async () => {
 }
 
 /**
- *  Set session data
+ *  Set session data and refresh the token before it expires
  * @param {objet} session 
  */
 const setSession = (session) => {
   SESSION = session
+  console.log(session)
+  // refresh token before it expires
+  // expires - 5s to be safe
+  setInterval(function (){
+    generateRedditAuthToken(true)
+  }, (SESSION.expires_in - 5) * 1000)
 }
 
 /**
  * Initial auth token generation
  * Kills script if it doesn't authenticate
  */
-const generateRedditAuthToken = async () => {
+const generateRedditAuthToken = async (refresh) => {
   try {
+    var post_body = {}
 
-    const post_body_str = form_urlencoded.default({
-      grant_type: 'password',
-      password: REDDIT_PASSWORD,
-      username: REDDIT_USERNAME
-    })
+    if(refresh) {
+      post_body.grant_type = 'refresh_token'
+      post_body.refresh_token = SESSSION.access_token
+    } else {
+      post_body.grant_type = 'password'
+      post_body.duration = 'permanent'
+      post_body.password = REDDIT_PASSWORD
+      post_body.username = REDDIT_USERNAME
+    }
+    
+    const post_body_str = form_urlencoded.default(post_body)
 
     const uri = `https://${REDDIT_CLIENT_ID}:${REDDIT_SECRET}@${REDDIT_OAUTH}`
 
@@ -268,7 +283,7 @@ const generateRedditAuthToken = async () => {
  * Main function
  */
 const run = async () => {
-  await generateRedditAuthToken()
+  await generateRedditAuthToken(false)
 
   // check once and then let the interval take over
   checkForUpdates()
