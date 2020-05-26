@@ -144,7 +144,6 @@ const searchPostsForMatches = (posts) => {
   do {
     if(posts[i].data) {
       // check if the post was already matched/sent and skip it if it was
-      // console.log(SENT_POSTS.indexOf(posts[i].data.id), posts[i].data.id, SENT_POSTS)
       if(SENT_POSTS.indexOf(posts[i].data.id) === -1) {
         if(findMatch(posts[i].data.title)) {
           matches.push({
@@ -168,7 +167,7 @@ const searchPostsForMatches = (posts) => {
  * TODO: allow user to provde device ID(s)
  * @param {array} matches 
  */
-const sendBullets = async (matches) => {
+const sendPushBulletLink = async (matches) => {
   let i = 0
   do {
     try {
@@ -179,7 +178,23 @@ const sendBullets = async (matches) => {
       console.error(new Error(error))
     }
   } while (i < matches.length)
-  console.log(SENT_POSTS)
+}
+
+/**
+ * Sends Pushbullet notes to all devices
+ * TODO: allow user to provde device ID(s)
+ * @param {array} matches 
+ */
+const sendPushBulletNote = async (notes) => {
+  let i = 0
+  do {
+    try {
+      await pusher.link({}, notes[i].title, notes[i].text)
+      i++
+    } catch(error) {
+      throw new Error(error)
+    }
+  } while (i < notes.length)
 }
 
 
@@ -189,7 +204,7 @@ const sendBullets = async (matches) => {
  */
 const getRedditPosts = async () => {
   try {
-    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, 401, {
+    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, 401, 503, {
       'User-Agent': USER_AGENT,
       'Authorization': `${SESSION.token_type} ${SESSION.access_token}`,
       'Accept': 'application/json'
@@ -203,7 +218,8 @@ const getRedditPosts = async () => {
       return posts.data.children || []
     }
   } catch(error) {
-    throw new Error(error)
+    console.error(error)
+    process.exit(1)
   }
 }
 
@@ -217,7 +233,7 @@ const checkForUpdates = async () => {
     if(posts.length) {
       var matches = searchPostsForMatches(posts)
       if(matches.length) {
-        sendBullets(matches)
+        sendPushBulletLink(matches)
       }
     }
   } catch(error) {
@@ -231,11 +247,11 @@ const checkForUpdates = async () => {
  */
 const setSession = (session) => {
   SESSION = session
-  console.log(session)
-  // refresh token before it expires
+  // generate new token before it expires
+  // refresh does not seem to work with this direct path grant
   // expires - 5s to be safe
   setInterval(function (){
-    generateRedditAuthToken(true)
+    generateRedditAuthToken(false)
   }, (SESSION.expires_in - 5) * 1000)
 }
 
@@ -249,7 +265,7 @@ const generateRedditAuthToken = async (refresh) => {
 
     if(refresh) {
       post_body.grant_type = 'refresh_token'
-      post_body.refresh_token = SESSSION.access_token
+      post_body.refresh_token = SESSION.access_token
     } else {
       post_body.grant_type = 'password'
       post_body.duration = 'permanent'
@@ -261,7 +277,7 @@ const generateRedditAuthToken = async (refresh) => {
 
     const uri = `https://${REDDIT_CLIENT_ID}:${REDDIT_SECRET}@${REDDIT_OAUTH}`
 
-    const reddit_post = bent('POST', 'json', {
+    const reddit_post = bent('POST', 'json', 200, 400, 401, {
       'User-Agent': USER_AGENT,
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json'
@@ -270,7 +286,7 @@ const generateRedditAuthToken = async (refresh) => {
     const reddit_response = await reddit_post(uri, post_body_str)
 
     if(reddit_response.error) {
-      throw new Error(reddit_response.error)
+      throw new Error(reddit_response.error, reddit_response.message)
     } else {
       setSession(reddit_response)
     }
@@ -283,14 +299,33 @@ const generateRedditAuthToken = async (refresh) => {
  * Main function
  */
 const run = async () => {
-  await generateRedditAuthToken(false)
+  try {
+    await sendPushBulletNote([{
+      title: 'Starting Pushbullet Notifier for Reddit',
+      text: `${moment().format('MMMM Do YYYY, h:mm:ss a')}: Searching ${config.subreddit} for ${config.post}${config.have}${config.want}`
+    }])
+    await generateRedditAuthToken(false)
 
-  // check once and then let the interval take over
-  checkForUpdates()
-
-  setInterval(function (){
+    // check once and then let the interval take over
     checkForUpdates()
-  }, config.interval * 1000)
+
+    setInterval(function (){
+      checkForUpdates()
+    }, config.interval * 1000)
+  } catch (error) {
+    console.error(error)
+    try {
+
+      await sendPushBulletNote([{
+        title: 'Error. Shutting down Pushbullet Notifier for Reddit',
+        text: `${moment().format('MMMM Do YYYY, h:mm:ss a')}: ${error}`
+      }])
+      process.exit(1)
+    } catch (error) {
+      console.error(error)
+      process.exit(1)
+    }
+  }
 } 
 
 /**
