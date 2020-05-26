@@ -189,7 +189,7 @@ const sendPushBulletNote = async (notes) => {
   let i = 0
   do {
     try {
-      await pusher.link({}, notes[i].title, notes[i].text)
+      await pusher.note({}, notes[i].title, notes[i].text)
       i++
     } catch(error) {
       throw new Error(error)
