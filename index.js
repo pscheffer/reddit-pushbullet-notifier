@@ -22,9 +22,10 @@ var SENT_POSTS = []
 // config of args and defaults
 args
   .option('subreddit', 'String - Subreddit you want to match within.')
-  .option('post', 'String - Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild.')
-  .option('have', 'String -[H] marketplace post title you want to match against. Required if no Post or Want args are present.')
-  .option('want', 'String - [W] marketplace post title you want to match against. Required if no Post or Have args are present.')
+  .option('post', 'String - Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild. Use a comma separated list to search for multiple items. ie. "Cats, Dogs"')
+  .option('have', 'String -[H] marketplace post title you want to match against. Required if no Post or Want args are present. Use a comma separated list to search for multiple items. ie. "Rama, HHKB"')
+  .option('want', 'String - [W] marketplace post title you want to match against. Required if no Post or Have args are present. Use a comma separated list to search for multiple items. ie. "Gateron, Zealios"')
+  .option('country', 'String - Country or countries you want to limit posts to. If provided, the country code must be present in the title, ie. "US-CA". Use a comma separated list to search for multiple countries. ie. "CA, US"')
   .option('interval', 'Number - Interval in seconds that script checks for new posts. Minimum is 1.')
 
 const flags = args.parse(process.argv)
@@ -33,6 +34,7 @@ const config = {
   post: '',
   have: '',
   want: '',
+  country: '',
   interval: 5
 }
 
@@ -59,17 +61,29 @@ const validateArgs = async () => {
   // match inputs
   if(typeof flags.post === 'string') {
     valid.post = true
-    config.post = flags.post.split(',')
+    config.post = flags.post.split(',').map((arg) => {
+      return arg.trim()
+    })
   }
 
   if(typeof flags.have === 'string') {
     valid.have = true
-    config.have = flags.have.split(',')
+    config.have = flags.have.split(',').map((arg) => {
+      return arg.trim()
+    })
   }
 
   if(typeof flags.want === 'string') {
     valid.want = true
-    config.want = flags.want.split(',')
+    config.want = flags.want.split(',').map((arg) => {
+      return arg.trim()
+    })
+  }
+
+  if(typeof flags.country === 'string') {
+    config.country = flags.country.split(',').map((arg) => {
+      return arg.trim()
+    })
   }
 
   if(typeof flags.interval === 'undefined' || (typeof flags.interval === 'number' && flags.interval >= 1)) {
@@ -89,17 +103,38 @@ const validateArgs = async () => {
  * @param {string} title
  * @returns {boolean}
  */
-const matchTitles = (title_matches, title) => {
-  var matches = false
+const matchTitles = (queries, title) => {
+  var title_matched = false
   let i = 0
   do {
-    matches = title.indexOf(title_matches[i].toLowerCase().trim()) !== -1
-    if(matches) {
+    title_matched = title.indexOf(queries[i].toLowerCase().trim()) !== -1
+    if(title_matched) {
       break
     } 
     i++
-  } while (i < title_matches.length)
-  return matches
+  } while (i < queries.length)
+
+  return title_matched
+}
+
+/**
+ * Takes array of title matches and compares with title to look for matches
+ * @param {array} title_matches 
+ * @param {string} title
+ * @returns {boolean}
+ */
+const matchCountries = (countries, title) => {
+  var country_matched = false
+  let i = 0
+  do {
+    country_matched = title.substr(1, 2).toLocaleLowerCase() === countries[i].toLocaleLowerCase().trim()
+    if(country_matched) {
+      break
+    } 
+    i++
+  } while (i < countries.length)
+
+  return country_matched
 }
 
 /**
@@ -110,23 +145,29 @@ const matchTitles = (title_matches, title) => {
 const findMatch = (title) => {
   title = title.toLowerCase()
   var matches = false
-
-  if(config.post) {
-    matches = matchTitles(config.post, title)
+  var country_matched = false
+  if(config.country) {
+    country_matched = matchCountries(config.country, title)
   }
-
-  if(config.have || config.want) {
-    // forums that use [H] [W] title formats should create two array strings for which we can search
-    var split_title = title.split('[w]')
-
-    if(config.have) {
-      matches = matchTitles(config.have, split_title[0])
+  
+  if(config.country.length === 0 || country_matched) {
+    if(config.post) {
+      matches = matchTitles(config.post, title)
     }
 
-    if(config.want && split_title[1]) {
-      matches = matchTitles(config.want, split_title[1])
-    }
+    if(config.have || config.want) {
+      // forums that use [H] [W] title formats should create two array strings for which we can search
+      var split_title = title.split('[w]')
 
+      if(config.have) {
+        matches = matchTitles(config.have, split_title[0])
+      }
+
+      if(config.want && split_title[1]) {
+        matches = matchTitles(config.want, split_title[1])
+      }
+
+    }
   }
 
   return matches
@@ -143,15 +184,12 @@ const searchPostsForMatches = (posts) => {
   // for each post
   do {
     if(posts[i].data) {
-      // check if the post was already matched/sent and skip it if it was
-      if(SENT_POSTS.indexOf(posts[i].data.id) === -1) {
-        if(findMatch(posts[i].data.title)) {
-          matches.push({
-            id: posts[i].data.id,
-            title: posts[i].data.title,
-            url: `https://www.reddit.com${posts[i].data.permalink}`
-          })
-        }
+      if(findMatch(posts[i].data.title)) {
+        matches.push({
+          id: posts[i].data.id,
+          title: posts[i].data.title,
+          url: `https://www.reddit.com${posts[i].data.permalink}`
+        })
       }
     } else {
       console.error('Invalid Post: ', posts[i])
@@ -171,8 +209,11 @@ const sendPushBulletLink = async (matches) => {
   let i = 0
   do {
     try {
-      await pusher.link({}, matches[i].title, matches[i].url)
-      SENT_POSTS.push(matches[i].id)
+      // check if the post was already matched/sent and skip it if it was
+      if(SENT_POSTS.indexOf(matches[i].id) === -1) {
+        await pusher.link({}, matches[i].title, matches[i].url)
+        SENT_POSTS.push(matches[i].id)
+      }
       i++
     } catch(error) {
       console.error(new Error(error))
@@ -219,7 +260,7 @@ const getRedditPosts = async () => {
     }
   } catch(error) {
     console.error(error)
-    process.exit(1)
+    // process.exit(1)
   }
 }
 
@@ -300,9 +341,13 @@ const generateRedditAuthToken = async (refresh) => {
  */
 const run = async () => {
   try {
+    let message = `${moment().format('MMMM Do YYYY, h:mm:ss a')}: Searching ${config.subreddit} for ${config.post}${config.have}${config.want}`
+    if(config.country.length) {
+      message += ` from ${config.country}`
+    }
     await sendPushBulletNote([{
       title: 'Starting Pushbullet Notifier for Reddit',
-      text: `${moment().format('MMMM Do YYYY, h:mm:ss a')}: Searching ${config.subreddit} for ${config.post}${config.have}${config.want}`
+      text: message
     }])
     await generateRedditAuthToken(false)
 
@@ -315,7 +360,6 @@ const run = async () => {
   } catch (error) {
     console.error(error)
     try {
-
       await sendPushBulletNote([{
         title: 'Error. Shutting down Pushbullet Notifier for Reddit',
         text: `${moment().format('MMMM Do YYYY, h:mm:ss a')}: ${error}`
