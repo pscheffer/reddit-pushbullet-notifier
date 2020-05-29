@@ -35,33 +35,32 @@ REDDIT_SECRET=your_reddit_secret
 ```
 
 ## Options
-| Options | Field       | Description                                                                                     | Required |
-| ------- | ----------- | ----------------------------------------------------------------------------------------------- | -------- |
-| `-s`    | Subreddit   | Subreddit you want to match within.                                                             | X        |
-| `-p`    | Posts       | Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild. Use a comma separated list to search for multiple items. |          |
-| `-h`    | Have        | [H] marketplace post title you want to match against. Required if no Post or Want args are present. Use a comma separated list to search for multiple items. |          |
-| `-w`    | Want        | [W] marketplace post title you want to match against. Required if no Post or Have args are present. Use a comma separated list to search for multiple items. |          | Zealios |
-| `-c`    | Country     | Country or countries you want to limit posts to. If provided, the country code must be present in the title, ie. "US-CA". Use a comma separated list to search for multiple countries. |          |
-| `-i`    | Interval    | Interval in seconds that script checks for new posts. Minimum is 1.                                        |          |
+| Options | Field                    | Description                                                                                                                                                                              | Allowed Values         | Required |
+| ------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------- |
+| `-s`    | Subreddit                | Subreddit you want to match within.                                                                                                                                                      |                        | Y        |
+| `-t`    | Type _Default: `full`_     | Determines what type of search you want to do. `full` searches the entire title. `have` searches the [H] section of titles. `want` searches the [W] seaction of titles.                  | `full`, `have`, `want` | N        |
+| `-k`    | Keywords                 | Keywords you want to search for within the title. Each Keyword/phrase must be an exact match for you to be notified.                                                                     |                        | Y        |
+| `-c`    | Country                  | Country or countries you want to limit posts to. If provided, the country code must be present in the title, ie. "[US-CA]". Use a comma separated list to search for multiple countries. |                        | N        |
+| `-i`    | Interval _Default: `5`_    | Interval in seconds that script checks for new posts. Minimum is 1.                                                                                                                      |                        | N        |
 
 ## Examples
 
 From within the root of the project:
 
 ```
-node index.js -s mechmarket -h "RAMA M60-A"
+node index.js -s mechmarket -t have -k "RAMA M60-A"
 ```
 
 ```
-node index.js -s hardwareswap -w "RTX 2080ti" -i 30
+node index.js -s hardwareswap -t want -k "RTX 2080ti" -i 30
 ```
 
 ```
-node index.js -s aquariums -p "Living plants"
+node index.js -s aquariums -t full -k "Living plants"
 ```
 
 ```
-node index.js -s mechmarket -h "RAMA M60-a, Tofu HHKB, Tokyo60" -c "US, CA" -i 1
+node index.js -s mechmarket -t have  -k "RAMA M60-a, Tofu HHKB, Tokyo60" -c "US, CA" -i 1
 ```
 
 ## Exit

@@ -22,21 +22,20 @@ var SENT_POSTS = []
 // config of args and defaults
 args
   .option('subreddit', 'String - Subreddit you want to match within.')
-  .option('post', 'String - Post title you want to match against. Required if no Have or Want args are present. Should be used instead of those if you want to search the entire string or in conjunction with. Really, go wild. Use a comma separated list to search for multiple items. ie. "Cats, Dogs"')
-  .option('have', 'String -[H] marketplace post title you want to match against. Required if no Post or Want args are present. Use a comma separated list to search for multiple items. ie. "Rama, HHKB"')
-  .option('want', 'String - [W] marketplace post title you want to match against. Required if no Post or Have args are present. Use a comma separated list to search for multiple items. ie. "Gateron, Zealios"')
-  .option('country', 'String - Country or countries you want to limit posts to. If provided, the country code must be present in the title, ie. "US-CA". Use a comma separated list to search for multiple countries. ie. "CA, US"')
-  .option('interval', 'Number - Interval in seconds that script checks for new posts. Minimum is 1.')
+  .option('type', 'String - Determines what type of search you want to do. full searches the entire title. have searches the [H] section of titles. want searches the [W] seaction of titles. \n\nAllowed Values: full, have, want\nDefault: full\n')
+  .option('keywords', 'String - Keywords you want to search for within the title. Each Keyword/phrase must be an exact match for you to be notified. Use a comma delimited list for multipe phrases. ie. "Gateron, Zealios"')
+  .option('country', 'String - Country or countries you want to limit posts to. If provided, the country code must be present in the title, ie. "[US-CA]". Use a comma separated list to search for multiple countries.')
+  .option('interval', 'Number - Interval in seconds that script checks for new posts. Minimum is 1. \n\nDefault: 5 \n')
 
 const flags = args.parse(process.argv)
 const config = {
   subreddit: '',
-  post: '',
-  have: '',
-  want: '',
+  type: 'full',
+  keywords: '',
   country: '',
   interval: 5
 }
+const allowed_types = ['full', 'have', 'want']
 
 /**
  * Validates passed in args
@@ -46,36 +45,29 @@ const config = {
 const validateArgs = async () => {
   let valid = {
     subreddit: false,
-    post: false,
-    post_array: false,
-    interval: false
+    type: true,
+    keywords: false,
+    interval: false,
+    country: true
   }
 
   if(typeof flags.subreddit === 'string') {
-    // use /new.rss to get the latest
-    // let subreddit = `https://reddit.com/r/${flags.subreddit}/new`
     valid.subreddit = true
     config.subreddit = flags.subreddit
   }
 
+  if(typeof flags.type === 'string') {
+    if(allowed_types.indexOf(flags.type.toLowerCase()) === -1) {
+      valid.type = false
+    } else {
+      config.type = flags.type
+    }
+  }
+
   // match inputs
-  if(typeof flags.post === 'string') {
-    valid.post = true
-    config.post = flags.post.split(',').map((arg) => {
-      return arg.trim()
-    })
-  }
-
-  if(typeof flags.have === 'string') {
-    valid.have = true
-    config.have = flags.have.split(',').map((arg) => {
-      return arg.trim()
-    })
-  }
-
-  if(typeof flags.want === 'string') {
-    valid.want = true
-    config.want = flags.want.split(',').map((arg) => {
+  if(typeof flags.keywords === 'string') {
+    valid.keywords = true
+    config.keywords = flags.keywords.split(',').map((arg) => {
       return arg.trim()
     })
   }
@@ -94,7 +86,7 @@ const validateArgs = async () => {
   }
 
   // check for all required params
-  return valid.subreddit && valid.interval && (valid.post || valid.have || valid.want)
+  return valid.subreddit && valid.type && valid.keywords && valid.interval
 }
 
 /**
@@ -144,33 +136,24 @@ const matchCountries = (countries, title) => {
  */
 const findMatch = (title) => {
   title = title.toLowerCase()
-  var matches = false
+  var title_matched = false
   var country_matched = false
   if(config.country) {
     country_matched = matchCountries(config.country, title)
   }
   
   if(config.country.length === 0 || country_matched) {
-    if(config.post) {
-      matches = matchTitles(config.post, title)
-    }
 
-    if(config.have || config.want) {
-      // forums that use [H] [W] title formats should create two array strings for which we can search
+    if(config.type !== 'full') {
       var split_title = title.split('[w]')
-
-      if(config.have) {
-        matches = matchTitles(config.have, split_title[0])
-      }
-
-      if(config.want && split_title[1]) {
-        matches = matchTitles(config.want, split_title[1])
-      }
-
+      title = config.type === 'have' ? split_title[0] : split_title[1]
     }
+
+    title_matched = matchTitles(config.keywords, title)
+  
   }
 
-  return matches
+  return title_matched
 }
 
 /**
@@ -260,7 +243,6 @@ const getRedditPosts = async () => {
     }
   } catch(error) {
     console.error(error)
-    // process.exit(1)
   }
 }
 
@@ -290,10 +272,10 @@ const setSession = (session) => {
   SESSION = session
   // generate new token before it expires
   // refresh does not seem to work with this direct path grant
-  // expires - 5s to be safe
+  // expires - 3s to be safe
   setInterval(function (){
     generateRedditAuthToken(false)
-  }, (SESSION.expires_in - 5) * 1000)
+  }, (SESSION.expires_in - 3) * 1000)
 }
 
 /**
@@ -341,7 +323,7 @@ const generateRedditAuthToken = async (refresh) => {
  */
 const run = async () => {
   try {
-    let message = `${moment().format('MMMM Do YYYY, h:mm:ss a')}: Searching ${config.subreddit} for ${config.post}${config.have}${config.want}`
+    let message = `${moment().format('MMMM Do YYYY, h:mm:ss a')}: Searching [${config.type}] ${config.subreddit} for ${config.keywords}`
     if(config.country.length) {
       message += ` from ${config.country}`
     }
@@ -361,7 +343,7 @@ const run = async () => {
     console.error(error)
     try {
       await sendPushBulletNote([{
-        title: 'Error. Shutting down Pushbullet Notifier for Reddit',
+        title: 'Error - shutting down Pushbullet Notifier for Reddit',
         text: `${moment().format('MMMM Do YYYY, h:mm:ss a')}: ${error}`
       }])
       process.exit(1)
