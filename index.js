@@ -228,7 +228,7 @@ const sendPushBulletNote = async (notes) => {
  */
 const getRedditPosts = async () => {
   try {
-    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, 401, 503, {
+    const bent_reddit = bent(REDDIT_API, 'GET', 'json', 200, 401, 502, 503, {
       'User-Agent': USER_AGENT,
       'Authorization': `${SESSION.token_type} ${SESSION.access_token}`,
       'Accept': 'application/json'
@@ -237,12 +237,12 @@ const getRedditPosts = async () => {
     const posts = await bent_reddit(endpoint)
     // todo, if 401, re-authorize
     if(posts.error) {
-      console.error(posts.error)
+      throw posts.error
     } else {
       return posts.data.children || []
     }
   } catch(error) {
-    console.error(error)
+    throw new Error(error)
   }
 }
 
