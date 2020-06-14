@@ -234,7 +234,9 @@ const getRedditPosts = async () => {
       'Accept': 'application/json'
     })
     const endpoint = `/r/${config.subreddit}/new`
-    const posts = await bent_reddit(endpoint)
+    const posts = await bent_reddit(endpoint).catch((error) => {
+      throw error
+    })
     // todo, if 401, re-authorize
     if(posts.error) {
       throw posts.error
